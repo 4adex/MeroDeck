@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+// @ts-nocheck
+
+import React, { useState, useEffect } from 'react';
 import styles from '../styles/ActionButtons.module.css'
 
 import {
@@ -10,8 +12,10 @@ import {
 import { ResponseData } from '@calimero-is-near/calimero-p2p-sdk';
 import { LogicApiDataSource } from '../api/dataSource/LogicApiDataSource';
 
-import { RpcProvider, Contract, WalletAccount, CallData, shortString } from "starknet";
+import { RpcProvider, Contract, WalletAccount, CallData, shortString, cairo } from "starknet";
 import { connect } from "get-starknet";
+import { getStarknetRpcUrl } from '../utils/env';
+import contractData from '../constants/contractData.json';
 
 
 export function twoFeltToString(x:any, y:any) {
@@ -33,9 +37,74 @@ export default function ActionButtons() {
 
   const [connection, setConnection] = useState(null);
   const [address, setAddress] = useState("");
+  const [mafiaContract, setMafiaContract] = useState(null);
+  const [availableChips, setAvailableChips] = useState('0');
+  const provider = new RpcProvider({
+    nodeUrl: getStarknetRpcUrl(),
+  });
 
   //get player index from local storage
   const playerIndex = localStorage.getItem('playerIndex');
+
+  useEffect(() => {
+    const handleConnectWallet = async () => {
+      try {
+        const selectedWalletSWO = await connect({ modalTheme: 'dark' });
+        const wallet = await new WalletAccount(
+          { nodeUrl: getStarknetRpcUrl() },
+          selectedWalletSWO,
+        );
+
+        if (wallet) {
+          setConnection(wallet);
+          setAddress(wallet.walletProvider.selectedAddress);
+        }
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+        // toast.error("Failed to connect wallet. Please try again.");
+      }
+    };
+
+    handleConnectWallet();
+    fetchAvailableChips();
+  }, [address]);
+
+  const fetchAvailableChips = async () => {
+    const contract = await getContract();
+    const balance = await contract.balanceOf(address);
+    console.log(balance.toString());
+    setAvailableChips(shortenChips(balance.toString()));
+    // console.log('Available Chips:', balance);
+    // console.log(shortenChips(balance.toString()));
+  };
+  const getContract = async () => {
+    if (mafiaContract != null) {
+      return mafiaContract;
+    }
+
+    try {
+      const { abi: contractAbi } = await provider.getClassAt(
+        contractData.contractAddress,
+      );
+      if (contractAbi === undefined) {
+        throw new Error('No ABI found for the contract.');
+      }
+      const contract = new Contract(
+        contractAbi,
+        contractData.contractAddress,
+        provider,
+      );
+      setMafiaContract(contract);
+      return contract;
+    } catch (error) {
+      console.error('Error getting contract:', error);
+      toast.error(
+        'Failed to interact with the game contract. Please try again.',
+      );
+      return null;
+    }
+  };
+
 
 
   // Setting functions ========================
@@ -53,6 +122,28 @@ export default function ActionButtons() {
 
     console.log('Amount to add', result.data); // Working here
 
+    const converted_amount = amountToAdd*10**18;
+
+    console.log('Converted amount', converted_amount);
+
+        // 55 -> 55 * 10 **18 -> string
+    console.log(connection);
+    const call = await connection.execute([
+      {
+        contractAddress: contractData.contractAddress,
+        entrypoint: 'add_to_pot',
+        calldata: CallData.compile({
+          gameId: cairo.uint256('2'),
+          amount: cairo.uint256(converted_amount.toString()),
+        }),
+      },
+    ]);
+
+    console.log(call);
+    await provider.waitForTransaction(call.transaction_hash);
+
+
+    // Add to pot
 
     
 

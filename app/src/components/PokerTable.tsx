@@ -14,7 +14,17 @@ import {
 import {
   ResponseData,
 } from '@calimero-is-near/calimero-p2p-sdk';
-
+import { connect } from 'get-starknet';
+import {
+  RpcProvider,
+  Contract,
+  CallData,
+  WalletAccount,
+  cairo,
+} from 'starknet';
+import { getStarknetRpcUrl } from '../utils/env';
+import contractData from '../constants/contractData.json';
+import { send } from 'vite';
 
 
 
@@ -93,14 +103,47 @@ export default function PokerTable() {
   ])
   const[potSize, setPotSize] = useState<number>(0)
   const[winner, setWinner] = useState<string>('')
+  const[winnerIndex, setWinnerIndex] = useState<number>(-1)
+  const[winnerMoneySent, setWinnerMoneySent] = useState<boolean>(false)
 
+  const provider = new RpcProvider({
+      nodeUrl: getStarknetRpcUrl(),
+    });
+
+
+
+  //Sending money to the current player if current player is winner
+  async function sendMoney() {
+    //Getting the address
+    if (winnerIndex == -1 || winnerMoneySent) {
+      return;
+    }
+    
+    if (thisplayerindex==winnerIndex) {
+      const call = await connection.execute([
+        {
+          contractAddress: contractData.contractAddress,
+          entrypoint: 'declare_winner',
+          calldata: CallData.compile({
+            game_id: 2,
+            winner: address,
+          }),
+        },
+      ]);
+      console.log(call);
+      await provider.waitForTransaction(call.transaction_hash);
+    }
+  }
 
   //Will have to see if this works midway of game or not
   useEffect(() => {
     if (winner) {
       window.alert(`Winner is ${winner}`);
     }
-  }, [winner])
+    if (winnerIndex != -1) {
+      sendMoney();
+    }
+  }, [])
 
 
   //get player index from local storage
@@ -113,6 +156,9 @@ export default function PokerTable() {
 
   const [communityCards, setCommunityCards] = useState<Card[]>([])
 
+  const [address, setAddress] = useState('');
+  const [connection, setConnection] = useState(null);
+
   useEffect(() => {
     // Mock community cards
     setCommunityCards([
@@ -123,6 +169,28 @@ export default function PokerTable() {
       { rank: '', suit: '' },
     ])
   }, [])
+
+  useEffect(() => {
+    const handleConnectWallet = async () => {
+      try {
+        const selectedWalletSWO = await connect({ modalTheme: 'dark' });
+        const wallet = await new WalletAccount(
+          { nodeUrl: getStarknetRpcUrl() },
+          selectedWalletSWO,
+        );
+
+        if (wallet) {
+          setConnection(wallet);
+          setAddress(wallet.walletProvider.selectedAddress);
+        }
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+        // toast.error("Failed to connect wallet. Please try again.");
+      }
+    };
+
+    handleConnectWallet();
+  }, [address]);
 
   // Fetching functions ================================================
 
@@ -165,8 +233,12 @@ export default function PokerTable() {
     const winner = result.data?.game_state.winner;
 
     if (winner) {
-      // console.log("Winner is", winner)
+      console.log("Winner is", winner)
       setWinner(players[winner].player_name);
+      setWinnerIndex(winner);
+
+      sendMoney();
+      setWinnerMoneySent(true);
       // window.alert(`Winner is ${winner}`);
     }
 

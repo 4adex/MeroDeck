@@ -1,16 +1,108 @@
-import React, { useState } from 'react';
+// @ts-nocheck
+
+import React, { useState, useEffect } from 'react';
 import { JoinGameRequest, JoinGameResponse } from '../../api/clientApi';
 import { LogicApiDataSource } from '../../api/dataSource/LogicApiDataSource';
 import { ResponseData } from '@calimero-is-near/calimero-p2p-sdk';
 import { getConfigAndJwt } from '../../api/dataSource/LogicApiDataSource';
 import { useNavigate } from 'react-router-dom';
 import styles from '../../styles/JoinGame.module.css';
+import contractData from '../../constants/contractData.json';
+import {
+  RpcProvider,
+  Contract,
+  CallData,
+  WalletAccount,
+  cairo,
+} from 'starknet';
+import { connect } from 'get-starknet';
+import { getStarknetRpcUrl } from '../../utils/env';
+import { getSystemErrorMap } from 'util';
 
+const shortenChips = (chips: string) => {
+  while (chips.length < 19) {
+    chips = '0' + chips;
+  }
+  if (chips.length <= 12) {
+    return '0.0';
+  }
+  const shortened = chips.slice(0, -12);
+  return `${shortened.slice(0, -6)}.${shortened.slice(-6)}`;
+};
 
 export default function Join() {
   const [playerName, setPlayerName] = useState('');
   const [chips, setChips] = useState('');
+  const [availableChips, setAvailableChips] = useState('0');
+  const [buyChips, setBuyChips] = useState(0);
+  const [connection, setConnection] = useState(null);
+  const [address, setAddress] = useState('');
+  const [pokerContract, setPokerContract] = useState(null);
+  const [loading, setLoading] = useState(false);
+
   const navigate = useNavigate();
+  const provider = new RpcProvider({
+    nodeUrl: getStarknetRpcUrl(),
+  });
+
+  useEffect(() => {
+    const handleConnectWallet = async () => {
+      try {
+        const selectedWalletSWO = await connect({ modalTheme: 'dark' });
+        const wallet = await new WalletAccount(
+          { nodeUrl: getStarknetRpcUrl() },
+          selectedWalletSWO,
+        );
+
+        if (wallet) {
+          setConnection(wallet);
+          setAddress(wallet.walletProvider.selectedAddress);
+        }
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+        // toast.error("Failed to connect wallet. Please try again.");
+      }
+    };
+
+    handleConnectWallet();
+    fetchAvailableChips();
+  }, [address]);
+
+  const fetchAvailableChips = async () => {
+    const contract = await getContract();
+    const balance = await contract.balanceOf(address);
+    console.log(balance.toString());
+    setAvailableChips(shortenChips(balance.toString()));
+    // console.log('Available Chips:', balance);
+    // console.log(shortenChips(balance.toString()));
+  };
+  const getContract = async () => {
+    if (pokerContract != null) {
+      return pokerContract;
+    }
+
+    try {
+      const { abi: contractAbi } = await provider.getClassAt(
+        contractData.contractAddress,
+      );
+      if (contractAbi === undefined) {
+        throw new Error('No ABI found for the contract.');
+      }
+      const contract = new Contract(
+        contractAbi,
+        contractData.contractAddress,
+        provider,
+      );
+      setPokerContract(contract);
+      return contract;
+    } catch (error) {
+      console.error('Error getting contract:', error);
+      // toast.error(
+      //   'Failed to interact with the game contract. Please try again.',
+      // );
+      return null;
+    }
+  };
 
   async function joinGame(request: JoinGameRequest) {
 
@@ -39,9 +131,23 @@ export default function Join() {
 
   }
 
-  async function buyChips() {
+  async function buyChip() {
     //Buy the chips using contract call
-    console.log("Buying chips haha");
+    console.log('Buying chips haha: ', buyChips);
+    if (buyChips == 0) return;
+    const call = await connection.execute([
+      {
+        contractAddress: contractData.contractAddress,
+        entrypoint: 'mint',
+        calldata: CallData.compile({
+          to: address,
+          amount: cairo.uint256(buyChips.toString()),
+        }),
+      },
+    ]);
+
+    console.log(call);
+    await provider.waitForTransaction(call.transaction_hash);
   }
 
 
@@ -52,20 +158,22 @@ export default function Join() {
     console.log('Player Name:', playerName);
     console.log('Chips:', chips);
 
+    setLoading(true);
+
 
     //Buy the chips using contract call
-    await buyChips();
+    await buyChip();
     //Do an rpc call to join game and pass the player name and chips
 
     //Getting calimero public key from jwt
     const { jwtObject, config, error } = getConfigAndJwt();
-        if (error) {
-          return { error };
-        }
+    if (error) {
+      return { error };
+    }
     
     await joinGame({request:{ 
       public_key: jwtObject.executor_public_key,
-      chips: parseInt(chips),
+      chips: parseInt(availableChips),
       player_name: playerName}});
 
     //Checking if the player index is set
@@ -93,18 +201,32 @@ export default function Join() {
             className={styles.inputField}
           />
         </div>
+        <p>Available Chips: {availableChips}</p>
         <div>
-          <label htmlFor="chips">Amount of Chips:</label>
+          <label htmlFor="chips">Buy some Chips?</label>
           <input
             type="number"
             id="chips"
             value={chips}
-            onChange={(e) => setChips(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              const _buyChips = value * 10 ** 18;
+              console.log(_buyChips);
+              if (value >= 1000) {
+                window.alert('Too large!');
+                return;
+              }
+              setBuyChips(_buyChips);
+              setChips(value);
+            }}
             required
             className={styles.inputField}
           />
         </div>
-        <button type="submit" className={styles.submitButton}>Join Game</button>
+        {loading && <span>Please wait, joining...</span>}
+        <button type="submit" className={styles.submitButton}>
+          Join Game
+        </button>
       </form>
     </div>
   );
