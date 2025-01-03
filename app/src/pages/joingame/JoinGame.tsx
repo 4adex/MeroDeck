@@ -37,7 +37,8 @@ export default function Join() {
   const [buyChips, setBuyChips] = useState(0);
   const [connection, setConnection] = useState(null);
   const [address, setAddress] = useState('');
-  const [mafiaContract, setMafiaContract] = useState(null);
+  const [pokerContract, setPokerContract] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
   const provider = new RpcProvider({
@@ -76,8 +77,8 @@ export default function Join() {
     // console.log(shortenChips(balance.toString()));
   };
   const getContract = async () => {
-    if (mafiaContract != null) {
-      return mafiaContract;
+    if (pokerContract != null) {
+      return pokerContract;
     }
 
     try {
@@ -92,13 +93,13 @@ export default function Join() {
         contractData.contractAddress,
         provider,
       );
-      setMafiaContract(contract);
+      setPokerContract(contract);
       return contract;
     } catch (error) {
       console.error('Error getting contract:', error);
-      toast.error(
-        'Failed to interact with the game contract. Please try again.',
-      );
+      // toast.error(
+      //   'Failed to interact with the game contract. Please try again.',
+      // );
       return null;
     }
   };
@@ -157,6 +158,8 @@ export default function Join() {
     console.log('Player Name:', playerName);
     console.log('Chips:', chips);
 
+    setLoading(true);
+
 
     //Buy the chips using contract call
     await buyChip();
@@ -167,18 +170,10 @@ export default function Join() {
     if (error) {
       return { error };
     }
-
-    await joinGame({
-      request: {
-        public_key: jwtObject.executor_public_key,
-        chips: parseInt(chips),
-        player_name: playerName,
-      },
-    });
     
     await joinGame({request:{ 
       public_key: jwtObject.executor_public_key,
-      chips: parseInt(chips),
+      chips: parseInt(availableChips),
       player_name: playerName}});
 
     //Checking if the player index is set
@@ -228,6 +223,7 @@ export default function Join() {
             className={styles.inputField}
           />
         </div>
+        {loading && <span>Please wait, joining...</span>}
         <button type="submit" className={styles.submitButton}>
           Join Game
         </button>

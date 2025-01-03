@@ -122,21 +122,25 @@ export default function ActionButtons() {
 
     console.log('Amount to add', result.data); // Working here
 
+    const converted_amount = amountToAdd*10**18;
+
+    console.log('Converted amount', converted_amount);
 
         // 55 -> 55 * 10 **18 -> string
-    // const call = await connection.execute([
-    //   {
-    //     contractAddress: contractData.contractAddress,
-    //     entrypoint: 'add_to_pot',
-    //     calldata: CallData.compile({
-    //       gameId: 3,
-    //       amount: cairo.uint256(amountToAdd.toString()),
-    //     }),
-    //   },
-    // ]);
+    console.log(connection);
+    const call = await connection.execute([
+      {
+        contractAddress: contractData.contractAddress,
+        entrypoint: 'add_to_pot',
+        calldata: CallData.compile({
+          gameId: cairo.uint256('2'),
+          amount: cairo.uint256(converted_amount.toString()),
+        }),
+      },
+    ]);
 
-    // console.log(call);
-    // await provider.waitForTransaction(call.transaction_hash);
+    console.log(call);
+    await provider.waitForTransaction(call.transaction_hash);
 
 
     // Add to pot
